@@ -69,6 +69,7 @@ class FormMonHoc(tk.Toplevel):
         self._tao_giao_dien()
         if mon:
             self.o_ma.insert(0, mon.get('subject_code', ''))
+            self.o_ma.config(state='disabled')   # không cho đổi mã môn khi sửa
             self.o_ten.insert(0, mon.get('name', ''))
             self.o_tc.insert(0, str(mon.get('credits', 3)))
 

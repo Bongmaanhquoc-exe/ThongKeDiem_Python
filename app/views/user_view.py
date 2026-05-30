@@ -56,6 +56,11 @@ class TaiKhoanView(ttk.Frame):
         if not dong:
             messagebox.showwarning("Chưa chọn", "Vui lòng chọn tài khoản.")
             return
+        # Không cho khoá tài khoản đang đăng nhập
+        if self.user_hien_tai and dong['id'] == self.user_hien_tai['id']:
+            messagebox.showerror("Không thể khoá",
+                                 "Bạn không thể khoá tài khoản đang dùng để đăng nhập.")
+            return
         hien_tai = bool(dong['is_active'])
         hanh_dong = "khoá" if hien_tai else "mở khoá"
         if messagebox.askyesno("Xác nhận", f"Bạn muốn {hanh_dong} tài khoản '{dong['username']}'?"):

@@ -25,9 +25,11 @@ def dang_nhap(username, password):
 
 
 def tao_tai_khoan(username, password, ho_ten, role):
-    """Tạo tài khoản mới. Ném ValueError nếu tên đã tồn tại."""
+    """Tạo tài khoản mới. Ném ValueError nếu dữ liệu không hợp lệ."""
     if not username.strip():
         raise ValueError("Tên đăng nhập không được để trống")
+    if not ho_ten.strip():
+        raise ValueError("Họ tên không được để trống")
     if user_model.tim_theo_username(username.strip()):
         raise ValueError(f"Tên đăng nhập '{username}' đã tồn tại")
     if len(password) < 6:
