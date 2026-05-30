@@ -14,7 +14,7 @@ BANG_XEP_LOAI = [
 
 def tinh_diem_tb(diem_giua_ky, diem_cuoi_ky):
     """Điểm TB = Giữa kỳ * 40% + Cuối kỳ * 60%"""
-    return round(diem_giua_ky * 0.4 + diem_cuoi_ky * 0.6, 2)
+    return round(float(diem_giua_ky) * 0.4 + float(diem_cuoi_ky) * 0.6, 2)
 
 
 def xep_loai(diem_tb):
