@@ -174,6 +174,28 @@ class FormNhapDiem(tk.Toplevel):
         except ValueError:
             self.lbl_tb.config(text="—")
 
+    def _kiem_tra_diem(self, gia_tri, ten_truong):
+        """
+        Kiểm tra điểm hợp lệ: không rỗng, là số, trong khoảng 0-10.
+        Trả về float nếu hợp lệ, None nếu không hợp lệ (đã hiện thông báo).
+        """
+        gia_tri = gia_tri.strip()
+        if not gia_tri:
+            messagebox.showerror("Lỗi nhập liệu",
+                                 f"{ten_truong} không được để trống.", parent=self)
+            return None
+        try:
+            diem = float(gia_tri)
+        except ValueError:
+            messagebox.showerror("Lỗi nhập liệu",
+                                 f"{ten_truong} phải là số (ví dụ: 7.5).", parent=self)
+            return None
+        if not (0 <= diem <= 10):
+            messagebox.showerror("Lỗi nhập liệu",
+                                 f"{ten_truong} phải từ 0 đến 10.", parent=self)
+            return None
+        return diem
+
     def _dien_du_lieu(self):
         self.combo_mon.set(self.diem.get('ten_mon', ''))
         self.o_hk.insert(0, self.diem.get('semester', ''))
@@ -192,13 +214,11 @@ class FormNhapDiem(tk.Toplevel):
         if not hoc_ky:
             messagebox.showerror("Lỗi", "Vui lòng nhập học kỳ", parent=self)
             return
-        try:
-            gk = float(self.o_gk.get())
-            ck = float(self.o_ck.get())
-            if not (0 <= gk <= 10 and 0 <= ck <= 10):
-                raise ValueError("Điểm phải từ 0 đến 10")
-        except ValueError as e:
-            messagebox.showerror("Lỗi", str(e), parent=self)
+        gk = self._kiem_tra_diem(self.o_gk.get(), "Điểm giữa kỳ")
+        if gk is None:
+            return
+        ck = self._kiem_tra_diem(self.o_ck.get(), "Điểm cuối kỳ")
+        if ck is None:
             return
 
         score_model.them_hoac_cap_nhat(
