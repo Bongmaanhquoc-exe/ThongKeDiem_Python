@@ -82,12 +82,13 @@ Xây dựng ứng dụng desktop quản lý điểm sinh viên với các mục 
 
 | Chức năng | Admin | Teacher | Viewer |
 |---|---|---|---|
-| Xem sinh viên | ✅ | ✅ | ✅ |
-| Thêm / Sửa sinh viên | ✅ | ✅ | ❌ |
-| Xoá sinh viên | ✅ | ✅ | ❌ |
-| Nhập / Sửa điểm | ✅ | ✅ | ❌ |
-| Xem thống kê | ✅ | ✅ | ✅ |
-| Quản lý tài khoản | ✅ | ❌ | ❌ |
+| Xem sinh viên / lớp / môn | ✅ | ✅ | ✅ |
+| Thêm / Sửa / Xoá sinh viên | ✅ | ✅ | ❌ ẩn nút |
+| Thêm / Sửa / Xoá lớp học | ✅ | ✅ | ❌ ẩn nút |
+| Thêm / Sửa / Xoá môn học | ✅ | ✅ | ❌ ẩn nút |
+| Nhập / Sửa / Xoá điểm | ✅ | ✅ | ❌ ẩn nút |
+| Xem thống kê + xuất Excel | ✅ | ✅ | ✅ |
+| Quản lý tài khoản | ✅ | ❌ ẩn menu | ❌ ẩn menu |
 
 ---
 
@@ -388,9 +389,26 @@ def dang_nhap(username, password):
     if not kiem_tra(password, user['password_hash']):
         raise ValueError("Mật khẩu không đúng")
     return user
+
+def tao_tai_khoan(username, password, ho_ten, role):
+    if user_model.tim_theo_username(username):
+        raise ValueError(f"Tên đăng nhập '{username}' đã tồn tại")
+    if len(password) < 6:
+        raise ValueError("Mật khẩu phải có ít nhất 6 ký tự")
+    return user_model.them(username, ma_hoa(password), ho_ten, role)
+
+def dat_lai_mat_khau(user_id, mk_moi):
+    # Admin đặt lại MK cho người khác — KHÔNG cần biết MK cũ
+    if len(mk_moi) < 6:
+        raise ValueError("Mật khẩu phải có ít nhất 6 ký tự")
+    user_model.doi_mat_khau(user_id, ma_hoa(mk_moi))
 ```
 
 **Nguyên tắc:** Ném `ValueError` thay vì trả về `None/False` → tầng View chỉ cần `try/except` là bắt được lỗi kèm thông báo cụ thể.
+
+**Tách biệt 2 luồng đổi mật khẩu:**
+- `doi_mat_khau(user_id, mk_cu, mk_moi)` — người dùng tự đổi, phải nhập đúng mật khẩu cũ
+- `dat_lai_mat_khau(user_id, mk_moi)` — admin đặt lại, không cần mật khẩu cũ
 
 ### 7.2 `score_service.py` — Tính điểm
 
@@ -478,16 +496,28 @@ class BangDuLieu(ttk.Frame):
 Mỗi màn hình đều theo cùng 1 cấu trúc:
 
 ```
-┌─────────────────────────────────────┐
-│          TIÊU ĐỀ MÀN HÌNH           │
-├─────────────────────────────────────┤
-│  [+ Thêm]  [✎ Sửa]  [✕ Xoá]  [Tìm]│  ← Toolbar
-├─────────────────────────────────────┤
-│                                     │
-│         BẢNG DỮ LIỆU               │  ← BangDuLieu widget
-│         (Treeview + Scrollbar)      │
-│                                     │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│            TIÊU ĐỀ MÀN HÌNH                 │
+├─────────────────────────────────────────────┤
+│  [+ Thêm]  [✎ Sửa]  [✕ Xoá]   [Tìm] [🔍]  │  ← Toolbar
+│  (ẩn 3 nút này nếu role = viewer)           │
+├─────────────────────────────────────────────┤
+│                                             │
+│           BẢNG DỮ LIỆU                     │  ← BangDuLieu widget
+│           (Treeview + Scrollbar)            │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+**Cách ẩn nút theo role:**
+
+```python
+# Áp dụng ở tất cả các view: student, class, subject, score
+if self.user.get('role') != 'viewer':
+    ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left')
+    ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left')
+    ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left')
+# Viewer chỉ thấy thanh toolbar trống hoặc ô tìm kiếm
 ```
 
 ### 8.3 Pattern Form Thêm / Sửa
@@ -503,6 +533,19 @@ class FormSinhVien(tk.Toplevel):
         self.on_luu = on_luu   # callback để reload bảng sau khi lưu
         ...
 
+    def _kiem_tra(self, d):
+        if not d['ma_sv']:
+            raise ValueError("Mã sinh viên không được để trống")
+        if not d['ho_ten']:
+            raise ValueError("Họ tên không được để trống")
+        # Validate định dạng ngày sinh YYYY-MM-DD trước khi gửi MySQL
+        if d['ngay_sinh']:
+            from datetime import datetime
+            try:
+                datetime.strptime(d['ngay_sinh'], '%Y-%m-%d')
+            except ValueError:
+                raise ValueError("Ngày sinh sai định dạng! Dùng: YYYY-MM-DD (vd: 2003-05-21)")
+
     def _luu(self):
         try:
             d = self._lay_du_lieu_form()
@@ -514,8 +557,11 @@ class FormSinhVien(tk.Toplevel):
             self.on_luu()   # reload bảng
             self.destroy()
         except ValueError as loi:
-            messagebox.showerror("Lỗi", str(loi))  # hiện thông báo
+            messagebox.showerror("Lỗi", str(loi))  # hiện thông báo rõ ràng
 ```
+
+**Lý do validate tại View trước khi gửi DB:**
+MySQL sẽ trả về lỗi `DataError: Incorrect date value` nếu định dạng sai. Validate sớm tại View giúp hiện thông báo thân thiện thay vì lỗi kỹ thuật.
 
 ### 8.4 Màn hình Nhập điểm — Tính điểm realtime
 
@@ -536,6 +582,30 @@ def _tinh_thu(self, _=None):
         self.lbl_tb.config(text="—")
 ```
 
+**Khoá combo Môn học khi Sửa điểm:**
+
+Khi mở form ở chế độ Sửa, combo Môn học bị disable để tránh người dùng đổi sang môn khác (sẽ tạo record mới thay vì cập nhật):
+
+```python
+# Trong FormNhapDiem.__init__
+if diem:
+    self._dien_du_lieu()
+    self.combo_mon.config(state='disabled')  # chỉ sửa được điểm số
+```
+
+**Nút làm mới danh sách (🔄):**
+
+Danh sách sinh viên trong màn hình Nhập điểm được load lại khi nhấn nút 🔄, tránh trường hợp thêm sinh viên mới nhưng combo không cập nhật:
+
+```python
+def _lam_moi_sv(self):
+    svien = student_model.lay_tat_ca()
+    self.sv_map = {f"{s['student_code']} — {s['full_name']}": s['id'] for s in svien}
+    self.combo_sv['values'] = list(self.sv_map.keys())
+```
+
+Tương tự, màn hình Thống kê cũng có nút 🔄 để làm mới combo Môn học và Lớp.
+
 ### 8.5 Luồng điều hướng (Navigation)
 
 ```
@@ -544,6 +614,7 @@ main.py
   └── LoginView (Toplevel)
         │ đăng nhập thành công
         └── MainWindow (Toplevel)
+              │  protocol("WM_DELETE_WINDOW") → _thoat() → root.destroy()
               │
               ├── [Sinh viên]  → SinhVienView (Frame)
               ├── [Lớp học]    → LopHocView (Frame)
@@ -553,39 +624,75 @@ main.py
               └── [Tài khoản] → TaiKhoanView (Frame)  ← chỉ admin
 ```
 
+**Xử lý thoát ứng dụng đúng cách:**
+
+`MainWindow` là `Toplevel` — con của `root` ẩn. Nếu không bắt sự kiện đóng cửa sổ, nhấn X chỉ đóng `Toplevel` nhưng `root.mainloop()` vẫn chạy ngầm. Giải pháp:
+
+```python
+class MainWindow(tk.Toplevel):
+    def __init__(self, root, user):
+        self.root = root
+        self.protocol("WM_DELETE_WINDOW", self._thoat)
+
+    def _thoat(self):
+        self.root.destroy()  # huỷ root → mainloop() kết thúc → thoát hẳn
+```
+
 ---
 
 ## 9. CHỨC NĂNG PHÂN QUYỀN
 
 ### 9.1 Cách triển khai
 
-Phân quyền được kiểm tra tại **tầng View** dựa trên `user['role']`:
+Phân quyền được kiểm tra tại **tầng View** theo 2 cấp:
 
+**Cấp 1 — Ẩn menu Tài khoản (chỉ admin thấy):**
 ```python
-# main_window.py — chỉ hiện menu Tài khoản cho admin
-cac_menu = [
-    ("Sinh viên", ...),
-    ("Nhập điểm", ...),
-    ...
-]
+# main_window.py
+cac_menu = [("Sinh viên", ...), ("Nhập điểm", ...), ...]
 if self.user['role'] == 'admin':
     cac_menu.append(("Tài khoản", ...))
 ```
 
+**Cấp 2 — Ẩn nút Thêm/Sửa/Xoá (viewer không thấy):**
 ```python
-# user_view.py — chặn xoá tài khoản đang đăng nhập
+# Áp dụng trong: student_view, class_view, subject_view, score_view
+if self.user.get('role') != 'viewer':
+    ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left')
+    ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left')
+    ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left')
+```
+
+**Bảo vệ tài khoản đang đăng nhập:**
+```python
+# user_view.py — admin không thể tự xoá tài khoản mình đang dùng
 def _xoa(self):
     if dong['id'] == self.user_hien_tai['id']:
         messagebox.showerror("Không thể xoá",
-            "Bạn không thể xoá tài khoản đang dùng.")
+            "Bạn không thể xoá tài khoản đang dùng để đăng nhập.")
         return
+```
+
+**Đặt lại mật khẩu (admin):**
+
+Admin có thể đặt lại mật khẩu cho bất kỳ tài khoản nào mà **không cần biết mật khẩu cũ**. Form yêu cầu nhập mật khẩu mới 2 lần để xác nhận:
+
+```python
+# FormDoiMatKhau trong user_view.py
+def _luu(self):
+    if self.o_moi.get() != self.o_xn.get():
+        messagebox.showerror("Lỗi", "Mật khẩu nhập lại không khớp.")
+        return
+    auth_service.dat_lai_mat_khau(self.user_id, self.o_moi.get())
 ```
 
 ### 9.2 3 cấp độ quyền
 
-- **admin** — toàn quyền, thấy menu Tài khoản
-- **teacher** — xem + nhập/sửa dữ liệu, không quản lý tài khoản
-- **viewer** — chỉ xem dữ liệu và thống kê
+| Role | Mô tả | Được làm |
+|---|---|---|
+| **admin** | Quản trị viên | Toàn quyền + quản lý tài khoản |
+| **teacher** | Giáo viên | Xem + nhập/sửa dữ liệu và điểm |
+| **viewer** | Người xem | Chỉ xem dữ liệu và thống kê |
 
 ---
 
@@ -717,21 +824,24 @@ python main.py
 
 ### 14.1 Kết quả đạt được
 
-| Chức năng | Trạng thái |
-|---|---|
-| Đăng nhập / Đăng xuất | ✅ Hoàn thành |
-| CRUD Sinh viên | ✅ Hoàn thành |
-| CRUD Lớp học | ✅ Hoàn thành |
-| CRUD Môn học | ✅ Hoàn thành |
-| Nhập điểm thi | ✅ Hoàn thành |
-| Tính điểm TB + xếp loại | ✅ Hoàn thành |
-| Tính GPA theo tín chỉ | ✅ Hoàn thành |
-| Thống kê theo môn | ✅ Hoàn thành |
-| Bảng xếp hạng GPA | ✅ Hoàn thành |
-| Xuất Excel | ✅ Hoàn thành |
-| Phân quyền 3 cấp | ✅ Hoàn thành |
-| Quản lý tài khoản | ✅ Hoàn thành |
-| Bảo mật mật khẩu SHA-256 | ✅ Hoàn thành |
+| Chức năng | Trạng thái | Ghi chú |
+|---|---|---|
+| Đăng nhập / thoát đúng cách | ✅ Hoàn thành | WM_DELETE_WINDOW → root.destroy() |
+| CRUD Sinh viên | ✅ Hoàn thành | Có validate ngày sinh YYYY-MM-DD |
+| CRUD Lớp học | ✅ Hoàn thành | |
+| CRUD Môn học | ✅ Hoàn thành | |
+| Nhập điểm thi | ✅ Hoàn thành | Tính điểm TB realtime khi gõ |
+| Khoá môn khi sửa điểm | ✅ Hoàn thành | Tránh tạo record trùng |
+| Nút 🔄 làm mới danh sách | ✅ Hoàn thành | score_view, report_view |
+| Tính điểm TB + xếp loại | ✅ Hoàn thành | Công thức 40% + 60% |
+| Tính GPA theo tín chỉ | ✅ Hoàn thành | |
+| Thống kê theo môn | ✅ Hoàn thành | Tổng SV, TB, tỉ lệ qua |
+| Bảng xếp hạng GPA | ✅ Hoàn thành | Lọc theo lớp |
+| Xuất Excel | ✅ Hoàn thành | |
+| Phân quyền 3 cấp (UI) | ✅ Hoàn thành | Ẩn nút theo role tại View |
+| Quản lý tài khoản | ✅ Hoàn thành | Chỉ admin, chặn tự xoá |
+| Đặt lại mật khẩu (admin) | ✅ Hoàn thành | Không cần MK cũ, xác nhận 2 lần |
+| Bảo mật mật khẩu SHA-256 | ✅ Hoàn thành | |
 
 ### 14.2 Hướng phát triển
 
