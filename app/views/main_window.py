@@ -24,6 +24,16 @@ class MainWindow(tk.Toplevel):
     def _thoat(self):
         self.root.destroy()  # huỷ root → mainloop() kết thúc → chương trình thoát
 
+    def _dang_xuat(self):
+        from tkinter import messagebox
+        if messagebox.askyesno("Đăng xuất", "Bạn có chắc muốn đăng xuất?"):
+            self.destroy()                          # đóng cửa sổ chính
+            from app.views.login_view import LoginView
+            LoginView(self.root, self._khi_dang_nhap_lai)  # mở lại màn hình login
+
+    def _khi_dang_nhap_lai(self, user):
+        MainWindow(self.root, user)                 # mở lại cửa sổ chính với user mới
+
     def _tao_giao_dien(self):
         # ── Thanh menu bên trái ──────────────────────────────
         sidebar = tk.Frame(self, bg='#2c3e50', width=155)
@@ -56,6 +66,18 @@ class MainWindow(tk.Toplevel):
                 activeforeground='white',
                 cursor='hand2'
             ).pack(fill='x', padx=6, pady=2)
+
+        # Nút Đăng xuất — đặt ở dưới cùng sidebar
+        tk.Frame(sidebar, bg='#2c3e50').pack(fill='y', expand=True)  # đẩy nút xuống đáy
+        tk.Button(
+            sidebar, text="🚪  Đăng xuất", command=self._dang_xuat,
+            bg='#c0392b', fg='white',
+            font=('Arial', 10), relief='flat',
+            pady=9, anchor='w', padx=12,
+            activebackground='#e74c3c',
+            activeforeground='white',
+            cursor='hand2'
+        ).pack(fill='x', padx=6, pady=(2, 12))
 
         # ── Vùng nội dung ─────────────────────────────────────
         self.vung = ttk.Frame(self)
