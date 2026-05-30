@@ -38,9 +38,10 @@ class NhapDiemView(ttk.Frame):
         # ── Nút thao tác ──────────────────────────────────────
         toolbar = ttk.Frame(self)
         toolbar.pack(fill='x', padx=12, pady=4)
-        ttk.Button(toolbar, text="+ Nhập điểm", command=self._them_diem).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✎ Sửa điểm",  command=self._sua_diem).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✕ Xoá điểm",  command=self._xoa_diem).pack(side='left', padx=2)
+        if self.user.get('role') != 'viewer':
+            ttk.Button(toolbar, text="+ Nhập điểm", command=self._them_diem).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✎ Sửa điểm",  command=self._sua_diem).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✕ Xoá điểm",  command=self._xoa_diem).pack(side='left', padx=2)
 
         # ── Bảng điểm ─────────────────────────────────────────
         self.bang = BangDuLieu(self, cac_cot=[

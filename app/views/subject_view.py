@@ -20,9 +20,10 @@ class MonHocView(ttk.Frame):
 
         toolbar = ttk.Frame(self)
         toolbar.pack(fill='x', padx=12, pady=4)
-        ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left', padx=2)
+        if self.user.get('role') != 'viewer':
+            ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left', padx=2)
 
         self.bang = BangDuLieu(self, cac_cot=[
             ('subject_code', 'Mã môn',   120),

@@ -23,9 +23,11 @@ class SinhVienView(ttk.Frame):
         toolbar = ttk.Frame(self)
         toolbar.pack(fill='x', padx=12, pady=4)
 
-        ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left', padx=2)
-        ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left', padx=2)
+        # Viewer chỉ xem — ẩn các nút ghi dữ liệu
+        if self.user.get('role') != 'viewer':
+            ttk.Button(toolbar, text="+ Thêm", command=self._them).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left', padx=2)
+            ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left', padx=2)
 
         # Ô tìm kiếm bên phải
         ttk.Label(toolbar, text="Tìm:").pack(side='left', padx=(20, 4))
