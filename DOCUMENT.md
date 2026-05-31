@@ -120,6 +120,11 @@ is_active
 
 ### 3.2 Mô tả các bảng
 
+**Lý do thiết kế database theo dạng chuẩn hoá (normalized):**
+- Tách `classes`, `students`, `subjects`, `scores` thành bảng riêng tránh lặp dữ liệu: tên lớp chỉ lưu 1 lần trong `classes`, không lặp ở từng dòng sinh viên.
+- Khi đổi tên lớp chỉ cần cập nhật 1 dòng trong `classes` — tất cả sinh viên thuộc lớp đó tự động phản ánh đúng.
+- Foreign Key + `ON DELETE CASCADE` / `SET NULL` giúp database tự giữ toàn vẹn dữ liệu khi xoá.
+
 #### Bảng `classes` — Lớp học
 ```sql
 CREATE TABLE classes (
@@ -171,6 +176,13 @@ CREATE TABLE scores (
 );
 ```
 
+**Lý do dùng `ON DELETE CASCADE` cho bảng `scores`:**
+- Xoá một sinh viên thì tất cả điểm của sinh viên đó cũng xoá theo — tránh dữ liệu mồ côi (orphan records) trong bảng `scores` không còn liên kết đến sinh viên nào.
+
+**Lý do dùng `UNIQUE KEY (student_id, subject_id, semester)` trong `scores`:**
+- Một sinh viên chỉ có 1 bộ điểm / môn / học kỳ — ràng buộc này đảm bảo điều đó ở tầng database, không chỉ trong code ứng dụng.
+- Là điều kiện tiên quyết để kỹ thuật `ON DUPLICATE KEY UPDATE` hoạt động đúng.
+
 #### Bảng `users` — Tài khoản
 ```sql
 CREATE TABLE users (
@@ -183,11 +195,21 @@ CREATE TABLE users (
 );
 ```
 
+**Lý do dùng `is_active` thay vì xoá tài khoản:**
+- Xoá tài khoản thật sự sẽ mất lịch sử — ai đã nhập dữ liệu gì? Dùng cờ `is_active = 0` để khoá tài khoản mà vẫn giữ audit trail.
+- Dễ phục hồi nếu khoá nhầm: chỉ cần đặt lại `is_active = 1`.
+
 ---
 
 ## 4. THIẾT KẾ KIẾN TRÚC ỨNG DỤNG
 
 ### 4.1 Mô hình 3 tầng (3-Tier Architecture)
+
+**Lý do chọn kiến trúc 3 tầng:**
+- **Tách biệt trách nhiệm:** Mỗi tầng chỉ làm đúng việc của nó — View không biết SQL, Model không biết giao diện. Khi cần sửa giao diện không ảnh hưởng logic, khi đổi database không ảnh hưởng UI.
+- **Dễ bảo trì:** Nếu công thức tính điểm thay đổi, chỉ sửa `score_service.py` — không phải tìm kiếm khắp các file View.
+- **Tái sử dụng:** `score_service.tinh_diem_tb()` được gọi từ cả `score_view` (hiện realtime) lẫn `report_service` (thống kê), không cần viết lại.
+- **Dễ kiểm thử:** Service và Model có thể test độc lập mà không cần mở cửa sổ Tkinter.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -214,6 +236,11 @@ CREATE TABLE users (
 ```
 
 ### 4.2 Cấu trúc thư mục
+
+**Lý do tổ chức thư mục theo tầng (`models/`, `services/`, `views/`):**
+- Dễ tìm file: biết cần sửa logic tính điểm → vào `services/`, biết cần sửa giao diện → vào `views/`.
+- Tránh file quá dài: mỗi màn hình một file riêng thay vì nhét tất cả vào `main.py`.
+- `utils/` chứa các hàm không thuộc nghiệp vụ cụ thể (mã hoá, xuất Excel) — tái sử dụng nhiều nơi mà không tạo vòng phụ thuộc.
 
 ```
 thongkediem/
@@ -261,6 +288,8 @@ thongkediem/
 ## 5. XÂY DỰNG TẦNG DATABASE
 
 ### 5.1 File `app/database.py`
+
+> **Vị trí:** `thongkediem/app/database.py`
 
 Đây là file trung tâm, cung cấp **4 hàm dùng chung** cho toàn bộ ứng dụng:
 
@@ -329,7 +358,14 @@ Mỗi file model tương ứng với **1 bảng** trong database. Mỗi model ch
 - `cap_nhat(id, ...)` — cập nhật
 - `xoa(id)` — xoá
 
+**Lý do tách mỗi bảng thành một file model riêng:**
+- Mỗi file ngắn, dễ đọc — không phải cuộn qua hàng trăm dòng SQL không liên quan.
+- Tìm đúng chỗ ngay lập tức: muốn sửa cách lấy dữ liệu sinh viên → mở `student_model.py`, không cần tìm trong file lớn.
+- Nếu thêm bảng mới (vd: `departments`) chỉ cần thêm file `department_model.py` — không đụng chạm code cũ.
+
 ### 6.2 Ví dụ — `student_model.py`
+
+> **Vị trí:** `thongkediem/app/models/student_model.py`
 
 ```python
 from app.database import lay_nhieu, lay_mot, thuc_thi
@@ -361,9 +397,24 @@ def them(ma_sv, ho_ten, ngay_sinh, gioi_tinh, email, sdt, class_id):
     )
 ```
 
+**Lý do dùng `LEFT JOIN` thay vì `JOIN` (INNER JOIN):**
+- Sinh viên có thể chưa được xếp vào lớp nào (`class_id = NULL`). Nếu dùng INNER JOIN, những sinh viên đó sẽ bị ẩn hoàn toàn khỏi danh sách — đây là lỗi dữ liệu âm thầm khó phát hiện.
+- LEFT JOIN giữ lại sinh viên chưa có lớp, chỉ để `ten_lop = NULL` — hiển thị trống trên giao diện, người dùng biết cần bổ sung.
+
+**Lý do `tim_kiem` dùng `LIKE %tu_khoa%` (substring) thay vì `= tu_khoa` (exact match):**
+- Người dùng thường chỉ nhớ một phần tên hoặc mã số — tìm "Nguy" phải ra "Nguyễn Văn A".
+- Truyền tham số `%s` dạng placeholder thay vì nối chuỗi trực tiếp vào SQL để chống SQL Injection.
+
 ### 6.3 Kỹ thuật `ON DUPLICATE KEY UPDATE` trong `score_model`
 
+> **Vị trí:** `thongkediem/app/models/score_model.py`
+
 Khi nhập điểm, nếu sinh viên đã có điểm môn đó trong học kỳ đó thì **cập nhật**, ngược lại **thêm mới**:
+
+**Lý do dùng `ON DUPLICATE KEY UPDATE` thay vì kiểm tra rồi INSERT/UPDATE riêng:**
+- Tránh race condition: nếu dùng `SELECT` → `INSERT/UPDATE` riêng, có thể xảy ra 2 request cùng lúc đều thấy "chưa có" và cùng INSERT → lỗi duplicate.
+- Gọn hơn: chỉ 1 lệnh SQL thay vì 2 lần round-trip đến database.
+- Bảng `scores` đã có `UNIQUE KEY (student_id, subject_id, semester)` — MySQL tự phát hiện trùng và chuyển sang UPDATE.
 
 ```python
 def them_hoac_cap_nhat(student_id, subject_id, hoc_ky, diem_giua, diem_cuoi):
@@ -380,6 +431,8 @@ def them_hoac_cap_nhat(student_id, subject_id, hoc_ky, diem_giua, diem_cuoi):
 ## 7. XÂY DỰNG TẦNG SERVICES
 
 ### 7.1 `auth_service.py` — Xác thực người dùng
+
+> **Vị trí:** `thongkediem/app/services/auth_service.py`
 
 ```python
 def dang_nhap(username, password):
@@ -412,6 +465,8 @@ def dat_lai_mat_khau(user_id, mk_moi):
 
 ### 7.2 `score_service.py` — Tính điểm
 
+> **Vị trí:** `thongkediem/app/services/score_service.py`
+
 ```python
 BANG_XEP_LOAI = [
     (9.0, 'A+'), (8.5, 'A'), (8.0, 'B+'), (7.0, 'B'),
@@ -440,13 +495,27 @@ def tinh_gpa(student_id):
     return round(tong_diem / tong_tin_chi, 2)
 ```
 
+**Lý do dùng công thức 40% giữa kỳ + 60% cuối kỳ:**
+- Đây là tỉ lệ phổ biến tại nhiều trường đại học Việt Nam. Cuối kỳ quan trọng hơn vì kiểm tra toàn bộ kiến thức môn học.
+- Hàm `tinh_diem_tb` được tách riêng để nếu trường thay đổi tỉ lệ (vd: 30/70) chỉ cần sửa 1 chỗ — tất cả nơi gọi hàm tự cập nhật.
+
+**Lý do dùng bảng `BANG_XEP_LOAI` (list of tuples) thay vì chuỗi `if/elif`:**
+- Dễ thêm/bớt/đổi ngưỡng xếp loại mà không cần sửa logic — chỉ chỉnh giá trị trong list.
+- Vòng lặp dừng ở ngưỡng đầu tiên thoả điều kiện `diem_tb >= nguong` → không cần kiểm tra khoảng chồng lấp.
+
 **Công thức GPA theo tín chỉ:**
 
 ```
 GPA = Σ (Điểm TB môn × Số tín chỉ môn) / Σ Số tín chỉ
 ```
 
+**Lý do dùng GPA theo tín chỉ thay vì trung bình cộng đơn giản:**
+- Môn nhiều tín chỉ (4 TC) quan trọng hơn môn ít tín chỉ (2 TC) — cần có trọng số.
+- Đây là chuẩn tính GPA quốc tế (weighted GPA), phản ánh đúng năng lực học tập của sinh viên hơn.
+
 ### 7.3 `report_service.py` — Thống kê
+
+> **Vị trí:** `thongkediem/app/services/report_service.py`
 
 ```python
 def thong_ke_theo_mon(subject_id):
@@ -461,11 +530,18 @@ def thong_ke_theo_mon(subject_id):
     }
 ```
 
+**Lý do đặt logic thống kê trong Service thay vì truy vấn SQL thuần:**
+- Công thức `tinh_diem_tb` đã được định nghĩa sẵn trong `score_service` — gọi lại để đảm bảo nhất quán, không viết lại công thức 40/60 trong SQL.
+- Python dễ viết và đọc hơn SQL aggregate phức tạp (vd: tính tỉ lệ qua môn trong SQL cần `CASE WHEN` lồng nhau).
+- Nếu sau này đổi ngưỡng "qua môn" từ 5.0 thành 4.0, chỉ sửa 1 chỗ trong service.
+
 ---
 
 ## 8. XÂY DỰNG TẦNG VIEWS
 
 ### 8.1 Widget dùng chung — `BangDuLieu`
+
+> **Vị trí:** `thongkediem/app/views/bang_du_lieu.py`
 
 Thay vì viết lại Treeview ở mỗi màn hình, tạo 1 class dùng chung:
 
@@ -491,6 +567,11 @@ class BangDuLieu(ttk.Frame):
         return self._du_lieu[int(chon[0])]
 ```
 
+**Lý do tạo class `BangDuLieu` dùng chung thay vì viết Treeview trực tiếp ở mỗi màn hình:**
+- Có 6 màn hình đều cần bảng dữ liệu — nếu viết lại mỗi lần thì 6 chỗ cần sửa khi có thay đổi (vd: thêm scrollbar, đổi font).
+- Đóng gói `hien_du_lieu()` và `lay_dong_chon()` vào class giúp tất cả màn hình dùng chung giao tiếp nhất quán.
+- Giảm lỗi: logic "xoá hết rồi điền lại" (`delete` → `insert`) chỉ viết 1 lần, không bị viết sai ở nơi nào đó.
+
 ### 8.2 Cấu trúc mỗi màn hình CRUD
 
 Mỗi màn hình đều theo cùng 1 cấu trúc:
@@ -509,7 +590,13 @@ Mỗi màn hình đều theo cùng 1 cấu trúc:
 └─────────────────────────────────────────────┘
 ```
 
+**Lý do tất cả màn hình CRUD đều có cùng bố cục:**
+- Người dùng học cách dùng một màn hình là biết dùng tất cả — giảm thời gian làm quen.
+- Khi thêm màn hình mới (vd: quản lý khoa), chỉ cần copy cấu trúc và đổi dữ liệu, không phải thiết kế lại từ đầu.
+
 **Cách ẩn nút theo role:**
+
+> **Áp dụng trong:** `thongkediem/app/views/student_view.py`, `class_view.py`, `subject_view.py`, `score_view.py`
 
 ```python
 # Áp dụng ở tất cả các view: student, class, subject, score
@@ -521,6 +608,9 @@ if self.user.get('role') != 'viewer':
 ```
 
 ### 8.3 Pattern Form Thêm / Sửa
+
+> **Ví dụ trong:** `thongkediem/app/views/student_view.py` (class `FormSinhVien`)
+> Tương tự áp dụng trong: `class_view.py`, `subject_view.py`, `score_view.py`, `user_view.py`
 
 Tất cả form đều dùng chung pattern:
 
@@ -578,6 +668,8 @@ MySQL sẽ trả về lỗi `DataError: Incorrect date value` nếu định dạ
 - **Số điện thoại:** phải bắt đầu bằng `0` hoặc `+84`, tổng 9–11 chữ số; trường tùy chọn — chỉ validate khi có nhập; khoảng trắng được loại bỏ trước khi kiểm tra
 
 ### 8.4 Màn hình Nhập điểm — Tính điểm realtime
+
+> **Vị trí:** `thongkediem/app/views/score_view.py`
 
 Khi người dùng đang gõ điểm, ứng dụng tính điểm TB ngay lập tức:
 
@@ -641,6 +733,8 @@ Tương tự, màn hình Thống kê cũng có nút 🔄 để làm mới combo 
 
 ### 8.6 Thanh tìm kiếm trong màn hình CRUD
 
+> **Vị trí:** `thongkediem/app/views/subject_view.py`, `thongkediem/app/views/class_view.py`
+
 Các màn hình Quản lý Môn học và Quản lý Lớp học có thanh tìm kiếm lọc dữ liệu trực tiếp trên client (không truy vấn lại DB):
 
 ```
@@ -675,7 +769,14 @@ def _loc_va_hien(self, tu_khoa):
 - Nút **✕** xóa ô tìm kiếm và hiện lại toàn bộ danh sách
 - Sau khi Thêm/Sửa/Xoá, dữ liệu làm mới và giữ nguyên từ khóa đang tìm
 
+**Lý do lọc trên client (Python) thay vì gọi lại DB mỗi lần gõ:**
+- Dữ liệu môn học và lớp học thường ít (vài chục đến vài trăm dòng) — load một lần vào `_du_lieu_goc` là đủ, không cần truy vấn liên tục.
+- Lọc local nhanh hơn và không tạo nhiều kết nối MySQL khi người dùng đang gõ từng ký tự.
+- Ngược lại, màn hình Sinh viên dùng `tim_kiem()` gọi DB vì số lượng sinh viên có thể rất lớn, load toàn bộ vào bộ nhớ sẽ tốn tài nguyên.
+
 ### 8.5 Luồng điều hướng (Navigation)
+
+> **Liên quan:** `thongkediem/main.py`, `thongkediem/app/views/login_view.py`, `thongkediem/app/views/main_window.py`
 
 ```
 main.py
@@ -694,6 +795,8 @@ main.py
 ```
 
 **Xử lý thoát ứng dụng đúng cách:**
+
+> **Vị trí:** `thongkediem/app/views/main_window.py`
 
 `MainWindow` là `Toplevel` — con của `root` ẩn. Nếu không bắt sự kiện đóng cửa sổ, nhấn X chỉ đóng `Toplevel` nhưng `root.mainloop()` vẫn chạy ngầm. Giải pháp:
 
@@ -715,7 +818,15 @@ class MainWindow(tk.Toplevel):
 
 Phân quyền được kiểm tra tại **tầng View** theo 2 cấp:
 
+**Lý do kiểm tra quyền ở tầng View (ẩn nút) thay vì chặn ở Service:**
+- Mục tiêu là **UX rõ ràng** — người dùng không thấy nút thì không nhầm lẫn, thay vì nhấn nút rồi nhận thông báo lỗi.
+- Ứng dụng desktop chạy local, không có HTTP request từ bên ngoài — không cần bảo vệ nhiều lớp như web API.
+- Nếu cần nâng cấp lên web sau này, việc thêm kiểm tra quyền ở Service/Model là bước tiếp theo, không mâu thuẫn với thiết kế hiện tại.
+
 **Cấp 1 — Ẩn menu Tài khoản (chỉ admin thấy):**
+
+> **Vị trí:** `thongkediem/app/views/main_window.py`
+
 ```python
 # main_window.py
 cac_menu = [("Sinh viên", ...), ("Nhập điểm", ...), ...]
@@ -724,6 +835,9 @@ if self.user['role'] == 'admin':
 ```
 
 **Cấp 2 — Ẩn nút Thêm/Sửa/Xoá (viewer không thấy):**
+
+> **Áp dụng trong:** `thongkediem/app/views/student_view.py`, `class_view.py`, `subject_view.py`, `score_view.py`
+
 ```python
 # Áp dụng trong: student_view, class_view, subject_view, score_view
 if self.user.get('role') != 'viewer':
@@ -733,6 +847,9 @@ if self.user.get('role') != 'viewer':
 ```
 
 **Bảo vệ tài khoản đang đăng nhập:**
+
+> **Vị trí:** `thongkediem/app/views/user_view.py`
+
 ```python
 # user_view.py — admin không thể tự xoá tài khoản mình đang dùng
 def _xoa(self):
@@ -743,6 +860,8 @@ def _xoa(self):
 ```
 
 **Đặt lại mật khẩu (admin):**
+
+> **Vị trí:** `thongkediem/app/views/user_view.py` (class `FormDoiMatKhau`)
 
 Admin có thể đặt lại mật khẩu cho bất kỳ tài khoản nào mà **không cần biết mật khẩu cũ**. Form yêu cầu nhập mật khẩu mới 2 lần để xác nhận:
 
@@ -768,6 +887,8 @@ def _luu(self):
 ## 10. CHỨC NĂNG XUẤT EXCEL
 
 Sử dụng thư viện **openpyxl** để tạo file `.xlsx`. Khi xuất, ứng dụng mở hộp thoại **Save As** để người dùng tự chọn thư mục và tên file:
+
+> **Vị trí:** `thongkediem/app/utils/exporter.py`
 
 ```python
 from tkinter import filedialog
@@ -810,6 +931,14 @@ def xuat_excel(du_lieu, ten_file='ket_qua.xlsx', ten_cot=None):
 
 **Hàm trả về `None` nếu người dùng huỷ** — tầng View kiểm tra trước khi hiện thông báo thành công.
 
+**Lý do mở hộp thoại Save As thay vì lưu tự động vào thư mục cố định:**
+- Người dùng muốn kiểm soát nơi lưu file — đặt tên theo học kỳ, chọn thư mục Desktop hay USB.
+- Tránh ghi đè file cũ không có cảnh báo nếu lưu tự động vào cùng đường dẫn.
+
+**Lý do dùng `openpyxl` thay vì `csv`:**
+- CSV không có định dạng (không in đậm tiêu đề, không căn chỉnh cột) — file đẹp hơn khi mở bằng Excel/LibreOffice.
+- `openpyxl` cho phép tô màu tiêu đề, tự chỉnh độ rộng cột — tăng tính chuyên nghiệp của báo cáo.
+
 ---
 
 ## 11. BẢO MẬT MẬT KHẨU
@@ -818,7 +947,18 @@ def xuat_excel(du_lieu, ten_file='ket_qua.xlsx', ten_cot=None):
 
 Không bao giờ lưu mật khẩu dạng plaintext vào database. Nếu database bị lộ, mật khẩu người dùng vẫn an toàn.
 
+**Lý do không lưu plaintext:**
+- Nếu file backup database bị lấy cắp hay người quản trị tò mò nhìn vào, họ thấy ngay mật khẩu thật của mọi người.
+- Người dùng thường dùng lại mật khẩu cho nhiều dịch vụ (email, ngân hàng...) — lộ mật khẩu ứng dụng nhỏ dẫn đến nguy cơ cho các tài khoản quan trọng hơn.
+
 ### 11.2 Giải pháp — SHA-256 Hash
+
+> **Vị trí:** `thongkediem/app/utils/security.py`
+
+**Lý do dùng SHA-256 thay vì MD5 hay bcrypt:**
+- MD5 đã bị bẻ khóa bằng rainbow table — không còn an toàn cho mật khẩu.
+- bcrypt an toàn hơn SHA-256 (có salt, slow by design) nhưng cần cài thêm thư viện và phức tạp hơn — SHA-256 là lựa chọn hợp lý cho ứng dụng học tập nội bộ.
+- SHA-256 có sẵn trong thư viện chuẩn Python (`hashlib`) — không cần cài thêm.
 
 ```python
 import hashlib
@@ -850,7 +990,14 @@ Khi đăng nhập:
 
 Không hardcode thông tin kết nối database trong code → khi triển khai ở máy khác chỉ cần sửa file config, không cần sửa code.
 
+**Lý do dùng `config.ini` thay vì hardcode hay biến môi trường:**
+- Hardcode (`host = "localhost"`, `password = "123456"` trong code) khiến mỗi máy khác nhau phải sửa code — dễ commit nhầm mật khẩu lên Git.
+- `config.ini` được thêm vào `.gitignore` nên không bao giờ bị đẩy lên repository — thông tin nhạy cảm ở lại local.
+- Dễ đọc hơn biến môi trường đối với người mới: mở file ra là thấy ngay cần điền gì, không cần biết cách set `$env:DB_PASSWORD`.
+
 ### 12.2 File `config.ini`
+
+> **Vị trí:** `thongkediem/config.ini` (không đưa lên Git — xem `config.ini.example` để tham khảo)
 
 ```ini
 [database]
@@ -862,6 +1009,8 @@ name     = thongkediem
 ```
 
 ### 12.3 Đọc config trong code
+
+> **Vị trí:** `thongkediem/app/database.py` (phần đầu file)
 
 ```python
 import configparser
@@ -877,6 +1026,8 @@ Dùng `fallback` để có giá trị mặc định nếu key không tồn tại
 ---
 
 ## 13. LUỒNG CHẠY CHƯƠNG TRÌNH
+
+> **Điểm khởi động:** `thongkediem/main.py`
 
 ```
 python main.py
