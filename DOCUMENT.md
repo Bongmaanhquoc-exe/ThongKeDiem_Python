@@ -534,6 +534,7 @@ class FormSinhVien(tk.Toplevel):
         ...
 
     def _kiem_tra(self, d):
+        import re
         if not d['ma_sv']:
             raise ValueError("Mã sinh viên không được để trống")
         if not d['ho_ten']:
@@ -545,6 +546,15 @@ class FormSinhVien(tk.Toplevel):
                 datetime.strptime(d['ngay_sinh'], '%Y-%m-%d')
             except ValueError:
                 raise ValueError("Ngày sinh sai định dạng! Dùng: YYYY-MM-DD (vd: 2003-05-21)")
+        # Validate email
+        if d['email']:
+            if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', d['email']):
+                raise ValueError("Email không hợp lệ\nVí dụ: sinhvien@example.com")
+        # Validate số điện thoại
+        if d['sdt']:
+            sdt_chuan = re.sub(r'\s+', '', d['sdt'])
+            if not re.match(r'^(0|\+84)[0-9]{8,10}$', sdt_chuan):
+                raise ValueError("Số điện thoại không hợp lệ\nVui lòng nhập 9–11 chữ số, bắt đầu bằng 0 hoặc +84")
 
     def _luu(self):
         try:
@@ -562,6 +572,10 @@ class FormSinhVien(tk.Toplevel):
 
 **Lý do validate tại View trước khi gửi DB:**
 MySQL sẽ trả về lỗi `DataError: Incorrect date value` nếu định dạng sai. Validate sớm tại View giúp hiện thông báo thân thiện thay vì lỗi kỹ thuật.
+
+**Quy tắc validate thông tin liên hệ:**
+- **Email:** kiểm tra định dạng `xxx@xxx.xxx` bằng regex; trường tùy chọn — chỉ validate khi có nhập
+- **Số điện thoại:** phải bắt đầu bằng `0` hoặc `+84`, tổng 9–11 chữ số; trường tùy chọn — chỉ validate khi có nhập; khoảng trắng được loại bỏ trước khi kiểm tra
 
 ### 8.4 Màn hình Nhập điểm — Tính điểm realtime
 
@@ -581,6 +595,25 @@ def _tinh_thu(self, _=None):
     except ValueError:
         self.lbl_tb.config(text="—")
 ```
+
+**Combobox vừa gõ vừa chọn (autocomplete):**
+
+Các combo `Sinh viên` và `Môn học` trong màn hình Nhập điểm, cùng với combo `Môn học` và `Lớp` trong Thống kê, đều hỗ trợ vừa gõ vừa chọn. Khi người dùng gõ, danh sách tự lọc theo từ khóa và dropdown tự mở ra để gợi ý:
+
+```python
+self.combo_sv.bind('<KeyRelease>', self._loc_sv)
+
+def _loc_sv(self, _=None):
+    tu_khoa = self.combo_sv.get().lower()
+    tat_ca = list(self.sv_map.keys())
+    loc = [s for s in tat_ca if tu_khoa in s.lower()] if tu_khoa else tat_ca
+    self.combo_sv['values'] = loc
+    if loc:
+        self.combo_sv.event_generate('<Down>')
+    self._hien_diem_sv()  # cập nhật bảng điểm nếu khớp chính xác
+```
+
+Tìm kiếm không phân biệt hoa/thường và khớp theo chuỗi con (substring).
 
 **Khoá combo Môn học khi Sửa điểm:**
 
@@ -605,6 +638,42 @@ def _lam_moi_sv(self):
 ```
 
 Tương tự, màn hình Thống kê cũng có nút 🔄 để làm mới combo Môn học và Lớp.
+
+### 8.6 Thanh tìm kiếm trong màn hình CRUD
+
+Các màn hình Quản lý Môn học và Quản lý Lớp học có thanh tìm kiếm lọc dữ liệu trực tiếp trên client (không truy vấn lại DB):
+
+```
+┌─────────────────────────────────────────────┐
+│            TIÊU ĐỀ MÀN HÌNH                 │
+├─────────────────────────────────────────────┤
+│  [+ Thêm]  [✎ Sửa]  [✕ Xoá]               │  ← Toolbar
+├─────────────────────────────────────────────┤
+│  Tìm kiếm: [________________] [✕]           │  ← Thanh tìm kiếm
+├─────────────────────────────────────────────┤
+│           BẢNG DỮ LIỆU                     │
+└─────────────────────────────────────────────┘
+```
+
+```python
+def _tai_du_lieu(self):
+    self._du_lieu_goc = subject_model.lay_tat_ca()  # lưu toàn bộ để lọc lại
+    self._loc_va_hien(self.o_tim.get() if hasattr(self, 'o_tim') else '')
+
+def _loc_va_hien(self, tu_khoa):
+    tu_khoa = tu_khoa.strip().lower()
+    if tu_khoa:
+        ds = [m for m in self._du_lieu_goc
+              if tu_khoa in m['subject_code'].lower()
+              or tu_khoa in m['name'].lower()]
+    else:
+        ds = self._du_lieu_goc
+    self.bang.hien_du_lieu(ds)
+```
+
+- Lọc theo **nhiều trường** (mã môn + tên môn; tên lớp + khoa/ngành)
+- Nút **✕** xóa ô tìm kiếm và hiện lại toàn bộ danh sách
+- Sau khi Thêm/Sửa/Xoá, dữ liệu làm mới và giữ nguyên từ khóa đang tìm
 
 ### 8.5 Luồng điều hướng (Navigation)
 
@@ -698,27 +767,48 @@ def _luu(self):
 
 ## 10. CHỨC NĂNG XUẤT EXCEL
 
-Sử dụng thư viện **openpyxl** để tạo file `.xlsx`:
+Sử dụng thư viện **openpyxl** để tạo file `.xlsx`. Khi xuất, ứng dụng mở hộp thoại **Save As** để người dùng tự chọn thư mục và tên file:
 
 ```python
+from tkinter import filedialog
+
 def xuat_excel(du_lieu, ten_file='ket_qua.xlsx', ten_cot=None):
+    # Mở hộp thoại Save As
+    duong_dan = filedialog.asksaveasfilename(
+        defaultextension='.xlsx',
+        filetypes=[('Excel files', '*.xlsx'), ('All files', '*.*')],
+        initialfile=ten_file,
+        title='Chọn nơi lưu file Excel',
+    )
+    if not duong_dan:
+        return None   # người dùng nhấn Cancel
+
     wb = openpyxl.Workbook()
     ws = wb.active
 
     # Tạo hàng tiêu đề với nền xanh đậm, chữ trắng
     headers = list(du_lieu[0].keys())
     for col, key in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=ten_cot.get(key, key))
+        cell = ws.cell(row=1, column=col, value=(ten_cot or {}).get(key, key))
         cell.font = Font(bold=True, color='FFFFFF')
         cell.fill = PatternFill('solid', fgColor='2C3E50')
+        cell.alignment = Alignment(horizontal='center')
 
     # Điền dữ liệu từ dòng 2
     for row_idx, dong in enumerate(du_lieu, 2):
         for col_idx, key in enumerate(headers, 1):
             ws.cell(row=row_idx, column=col_idx, value=dong.get(key, ''))
 
-    wb.save(ten_file)
+    # Tự chỉnh độ rộng cột
+    for col in ws.columns:
+        do_rong = max(len(str(cell.value or '')) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(do_rong + 4, 40)
+
+    wb.save(duong_dan)
+    return duong_dan
 ```
+
+**Hàm trả về `None` nếu người dùng huỷ** — tầng View kiểm tra trước khi hiện thông báo thành công.
 
 ---
 
@@ -827,17 +917,19 @@ python main.py
 | Chức năng | Trạng thái | Ghi chú |
 |---|---|---|
 | Đăng nhập / thoát đúng cách | ✅ Hoàn thành | WM_DELETE_WINDOW → root.destroy() |
-| CRUD Sinh viên | ✅ Hoàn thành | Có validate ngày sinh YYYY-MM-DD |
-| CRUD Lớp học | ✅ Hoàn thành | |
-| CRUD Môn học | ✅ Hoàn thành | |
+| CRUD Sinh viên | ✅ Hoàn thành | Validate ngày sinh, email, SDT |
+| CRUD Lớp học | ✅ Hoàn thành | Có thanh tìm kiếm theo tên lớp / khoa |
+| CRUD Môn học | ✅ Hoàn thành | Có thanh tìm kiếm theo mã môn / tên môn |
+| Validate thông tin liên hệ SV | ✅ Hoàn thành | Email regex, SDT 9–11 số bắt đầu 0/+84 |
 | Nhập điểm thi | ✅ Hoàn thành | Tính điểm TB realtime khi gõ |
+| Combobox vừa gõ vừa chọn | ✅ Hoàn thành | Sinh viên, Môn học, Lớp — lọc theo từ khóa |
 | Khoá môn khi sửa điểm | ✅ Hoàn thành | Tránh tạo record trùng |
 | Nút 🔄 làm mới danh sách | ✅ Hoàn thành | score_view, report_view |
 | Tính điểm TB + xếp loại | ✅ Hoàn thành | Công thức 40% + 60% |
 | Tính GPA theo tín chỉ | ✅ Hoàn thành | |
 | Thống kê theo môn | ✅ Hoàn thành | Tổng SV, TB, tỉ lệ qua |
 | Bảng xếp hạng GPA | ✅ Hoàn thành | Lọc theo lớp |
-| Xuất Excel | ✅ Hoàn thành | |
+| Xuất Excel (Save As) | ✅ Hoàn thành | Hộp thoại chọn nơi lưu, huỷ được |
 | Phân quyền 3 cấp (UI) | ✅ Hoàn thành | Ẩn nút theo role tại View |
 | Quản lý tài khoản | ✅ Hoàn thành | Chỉ admin, chặn tự xoá |
 | Đặt lại mật khẩu (admin) | ✅ Hoàn thành | Không cần MK cũ, xác nhận 2 lần |

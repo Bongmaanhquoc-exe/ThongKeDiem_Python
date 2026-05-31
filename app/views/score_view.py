@@ -23,9 +23,10 @@ class NhapDiemView(ttk.Frame):
         khung_chon.pack(fill='x', padx=12, pady=4)
 
         ttk.Label(khung_chon, text="Sinh viên:").pack(side='left')
-        self.combo_sv = ttk.Combobox(khung_chon, state='readonly', width=38)
+        self.combo_sv = ttk.Combobox(khung_chon, width=38)
         self.combo_sv.pack(side='left', padx=8)
         self.combo_sv.bind('<<ComboboxSelected>>', self._hien_diem_sv)
+        self.combo_sv.bind('<KeyRelease>', self._loc_sv)
         ttk.Button(khung_chon, text="🔄", width=3,
                    command=self._lam_moi_sv).pack(side='left')
         self._lam_moi_sv()   # load lần đầu
@@ -63,6 +64,16 @@ class NhapDiemView(ttk.Frame):
             for s in svien
         }
         self.combo_sv['values'] = list(self.sv_map.keys())
+
+    def _loc_sv(self, _=None):
+        """Lọc danh sách sinh viên theo từ khóa đang gõ, rồi hiện điểm nếu khớp chính xác."""
+        tu_khoa = self.combo_sv.get().lower()
+        tat_ca = list(self.sv_map.keys())
+        loc = [s for s in tat_ca if tu_khoa in s.lower()] if tu_khoa else tat_ca
+        self.combo_sv['values'] = loc
+        if loc:
+            self.combo_sv.event_generate('<Down>')
+        self._hien_diem_sv()
 
     def _lay_student_id(self):
         """Lấy id của sinh viên đang chọn, hoặc None."""
@@ -136,9 +147,10 @@ class FormNhapDiem(tk.Toplevel):
         ttk.Label(f, text="Môn học:").grid(row=0, column=0, sticky='w', pady=5)
         self.combo_mon = ttk.Combobox(
             f, values=list(self.ten_mon_sang_id.keys()),
-            state='readonly', width=26
+            width=26
         )
         self.combo_mon.grid(row=0, column=1, padx=(10, 0), pady=5)
+        self.combo_mon.bind('<KeyRelease>', self._loc_mon)
 
         ttk.Label(f, text="Học kỳ:").grid(row=1, column=0, sticky='w', pady=5)
         self.o_hk = ttk.Entry(f, width=28)
@@ -162,6 +174,15 @@ class FormNhapDiem(tk.Toplevel):
 
         ttk.Button(f, text="  Lưu điểm  ", command=self._luu).grid(
             row=5, column=0, columnspan=2, pady=16)
+
+    def _loc_mon(self, _=None):
+        """Lọc danh sách môn học theo những gì đang gõ."""
+        tu_khoa = self.combo_mon.get().lower()
+        tat_ca = list(self.ten_mon_sang_id.keys())
+        loc = [m for m in tat_ca if tu_khoa in m.lower()] if tu_khoa else tat_ca
+        self.combo_mon['values'] = loc
+        if loc:
+            self.combo_mon.event_generate('<Down>')
 
     def _tinh_thu(self, _=None):
         """Tính điểm TB thử ngay khi gõ."""

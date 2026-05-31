@@ -1,12 +1,9 @@
 # ==============================================================
 # exporter.py — Xuất dữ liệu ra file Excel
 # ==============================================================
-import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
-
-# Thư mục lưu file xuất (tự tạo nếu chưa có)
-THU_MUC_XUAT = os.path.join(os.path.dirname(__file__), '..', '..', 'exports')
+from tkinter import filedialog
 
 
 def xuat_excel(du_lieu, ten_file='ket_qua.xlsx', ten_cot=None):
@@ -14,10 +11,16 @@ def xuat_excel(du_lieu, ten_file='ket_qua.xlsx', ten_cot=None):
     Xuất list dict ra file Excel.
     ten_cot: dict ánh xạ key → tên cột hiển thị, ví dụ {'full_name': 'Họ tên'}
              Nếu None thì dùng key gốc làm tiêu đề.
-    Trả về đường dẫn file đã lưu.
+    Trả về đường dẫn file đã lưu, hoặc None nếu người dùng huỷ.
     """
-    os.makedirs(THU_MUC_XUAT, exist_ok=True)
-    duong_dan = os.path.join(THU_MUC_XUAT, ten_file)
+    duong_dan = filedialog.asksaveasfilename(
+        defaultextension='.xlsx',
+        filetypes=[('Excel files', '*.xlsx'), ('All files', '*.*')],
+        initialfile=ten_file,
+        title='Chọn nơi lưu file Excel',
+    )
+    if not duong_dan:
+        return None
 
     wb = openpyxl.Workbook()
     ws = wb.active

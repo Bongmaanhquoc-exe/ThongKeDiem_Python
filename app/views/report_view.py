@@ -41,8 +41,9 @@ class ThongKeView(ttk.Frame):
         khung.pack(fill='x', padx=10, pady=8)
 
         ttk.Label(khung, text="Môn học:").pack(side='left')
-        self.combo_mon = ttk.Combobox(khung, state='readonly', width=30)
+        self.combo_mon = ttk.Combobox(khung, width=30)
         self.combo_mon.pack(side='left', padx=8)
+        self.combo_mon.bind('<KeyRelease>', self._loc_mon)
         ttk.Button(khung, text="Xem thống kê", command=self._xem_thong_ke_mon).pack(side='left')
         ttk.Button(khung, text="🔄", width=3,
                    command=self._lam_moi_mon).pack(side='left', padx=4)
@@ -68,6 +69,14 @@ class ThongKeView(ttk.Frame):
         mon_list = subject_model.lay_tat_ca()
         self.mon_map = {m['name']: m['id'] for m in mon_list}
         self.combo_mon['values'] = list(self.mon_map.keys())
+
+    def _loc_mon(self, _=None):
+        tu_khoa = self.combo_mon.get().lower()
+        tat_ca = list(self.mon_map.keys())
+        loc = [m for m in tat_ca if tu_khoa in m.lower()] if tu_khoa else tat_ca
+        self.combo_mon['values'] = loc
+        if loc:
+            self.combo_mon.event_generate('<Down>')
 
     def _xem_thong_ke_mon(self):
         subject_id = self.mon_map.get(self.combo_mon.get())
@@ -100,8 +109,9 @@ class ThongKeView(ttk.Frame):
         khung.pack(fill='x', padx=10, pady=8)
 
         ttk.Label(khung, text="Lọc theo lớp:").pack(side='left')
-        self.combo_lop = ttk.Combobox(khung, state='readonly', width=20)
+        self.combo_lop = ttk.Combobox(khung, width=20)
         self.combo_lop.pack(side='left', padx=8)
+        self.combo_lop.bind('<KeyRelease>', self._loc_lop)
         ttk.Button(khung, text="Xem xếp hạng", command=self._xem_xep_hang).pack(side='left')
         ttk.Button(khung, text="🔄", width=3,
                    command=self._lam_moi_lop).pack(side='left', padx=4)
@@ -126,6 +136,14 @@ class ThongKeView(ttk.Frame):
         self.lop_map.update({c['name']: c['id'] for c in lop_list})
         self.combo_lop['values'] = list(self.lop_map.keys())
         self.combo_lop.set('-- Tất cả --')
+
+    def _loc_lop(self, _=None):
+        tu_khoa = self.combo_lop.get().lower()
+        tat_ca = list(self.lop_map.keys())
+        loc = [l for l in tat_ca if tu_khoa in l.lower()] if tu_khoa else tat_ca
+        self.combo_lop['values'] = loc
+        if loc:
+            self.combo_lop.event_generate('<Down>')
 
     def _xem_xep_hang(self):
         class_id = self.lop_map.get(self.combo_lop.get())

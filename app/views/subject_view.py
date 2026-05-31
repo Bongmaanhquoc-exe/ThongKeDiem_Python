@@ -25,6 +25,16 @@ class MonHocView(ttk.Frame):
             ttk.Button(toolbar, text="✎ Sửa",  command=self._sua).pack(side='left', padx=2)
             ttk.Button(toolbar, text="✕ Xoá",  command=self._xoa).pack(side='left', padx=2)
 
+        # Thanh tìm kiếm
+        khung_tk = ttk.Frame(self)
+        khung_tk.pack(fill='x', padx=12, pady=(0, 4))
+        ttk.Label(khung_tk, text="Tìm kiếm:").pack(side='left')
+        self.o_tim = ttk.Entry(khung_tk, width=30)
+        self.o_tim.pack(side='left', padx=6)
+        self.o_tim.bind('<KeyRelease>', self._tim_kiem)
+        ttk.Button(khung_tk, text="✕", width=2,
+                   command=self._xoa_tim).pack(side='left')
+
         self.bang = BangDuLieu(self, cac_cot=[
             ('subject_code', 'Mã môn',   120),
             ('name',         'Tên môn',  280),
@@ -33,7 +43,25 @@ class MonHocView(ttk.Frame):
         self.bang.pack(fill='both', expand=True, padx=12, pady=(4, 10))
 
     def _tai_du_lieu(self):
-        self.bang.hien_du_lieu(subject_model.lay_tat_ca())
+        self._du_lieu_goc = subject_model.lay_tat_ca()
+        self._loc_va_hien(self.o_tim.get() if hasattr(self, 'o_tim') else '')
+
+    def _loc_va_hien(self, tu_khoa):
+        tu_khoa = tu_khoa.strip().lower()
+        if tu_khoa:
+            ds = [m for m in self._du_lieu_goc
+                  if tu_khoa in m['subject_code'].lower()
+                  or tu_khoa in m['name'].lower()]
+        else:
+            ds = self._du_lieu_goc
+        self.bang.hien_du_lieu(ds)
+
+    def _tim_kiem(self, _=None):
+        self._loc_va_hien(self.o_tim.get())
+
+    def _xoa_tim(self):
+        self.o_tim.delete(0, 'end')
+        self._loc_va_hien('')
 
     def _them(self):
         FormMonHoc(self, on_luu=self._tai_du_lieu)

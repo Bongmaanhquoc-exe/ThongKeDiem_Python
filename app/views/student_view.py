@@ -178,6 +178,7 @@ class FormSinhVien(tk.Toplevel):
         }
 
     def _kiem_tra(self, d):
+        import re
         if not d['ma_sv']:
             raise ValueError("Mã sinh viên không được để trống")
         if not d['ho_ten']:
@@ -194,6 +195,18 @@ class FormSinhVien(tk.Toplevel):
                     "Ngày sinh sai định dạng!\n"
                     "Vui lòng nhập theo dạng: YYYY-MM-DD\n"
                     "Ví dụ: 2003-05-21"
+                )
+        # Kiểm tra email
+        if d['email']:
+            if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', d['email']):
+                raise ValueError("Email không hợp lệ\nVí dụ: sinhvien@example.com")
+        # Kiểm tra số điện thoại
+        if d['sdt']:
+            sdt_chuan = re.sub(r'\s+', '', d['sdt'])
+            if not re.match(r'^(0|\+84)[0-9]{8,10}$', sdt_chuan):
+                raise ValueError(
+                    "Số điện thoại không hợp lệ\n"
+                    "Vui lòng nhập 9–11 chữ số, bắt đầu bằng 0 hoặc +84"
                 )
 
     def _luu(self):
